@@ -108,7 +108,7 @@ pvstream2ova --vmid <ID> --out /var/lib/vz/import/ --log /var/log/pvstream2ova-<
 ### UEFI
 
 - Works for full distros (Ubuntu, Debian): OVMF finds `\EFI\BOOT\BOOTX64.EFI` on the disk automatically
-- Does not work for Alpine virt: the ISO does not support UEFI boot → no EFI partition on disk
+- Alpine virt does not support UEFI boot (the ISO installs GRUB BIOS only, leaving no EFI partition on disk) — this is an Alpine limitation, not a pvstream2ova issue; any export tool would behave the same
 - efidisk0 (NVRAM) always skipped: not portable across hypervisors
 
 ### Integrity scripts
@@ -248,7 +248,7 @@ pvstream2ova --vmid <ID> --out /var/lib/vz/import/ --log /var/log/pvstream2ova-<
 ### UEFI
 
 - Funziona per distro full (Ubuntu, Debian): OVMF trova `\EFI\BOOT\BOOTX64.EFI` sul disco automaticamente
-- Non funziona per Alpine virt: l'ISO non supporta boot UEFI → nessuna EFI partition sul disco
+- Alpine virt non supporta il boot UEFI (l'ISO installa solo GRUB BIOS, senza EFI partition sul disco) — limitazione di Alpine, non di pvstream2ova; qualsiasi tool di export avrebbe lo stesso comportamento
 - efidisk0 (NVRAM) sempre skippato: non portabile tra hypervisor
 
 ### Script di integrità
