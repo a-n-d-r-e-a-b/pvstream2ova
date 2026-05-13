@@ -29,21 +29,31 @@ from typing import Callable
 
 log = logging.getLogger("pvstream2ova")
 
+# I/O buffer for reading the LVM block device
 CHUNK        = 64 << 20
+
+# VMDK streamOptimized grain = 64 KiB; GRAIN_SECTS = grain / 512-byte sector
 GRAIN_SIZE   = 65536
 GRAIN_SECTS  = 128
+
+# One grain table entry covers GT_COVERAGE grains = 32 MiB of virtual disk;
+# BATCH_GRAINS grains are compressed per parallel batch (16 MiB raw)
 GT_COVERAGE  = 512
 BATCH_GRAINS = 256
+
 VMDK_MAGIC   = 0x564D444B
 VMDK_VER     = 3
 _MARKER_EOS  = 0
 _MARKER_GT   = 1
 _MARKER_GD   = 2
 _MARKER_FOOT = 3
+
+# Descriptor region: 20 sectors reserved by the streamOptimized spec
 _DESC_BYTES  = 20 * 512
 
 _libc  = ctypes.CDLL("libc.so.6", use_errno=True)
-_PUNCH = 0x01 | 0x02  # FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE
+# FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE — free blocks without changing file size
+_PUNCH = 0x01 | 0x02
 
 
 def _punch_hole(fd: int, offset: int, length: int) -> None:
@@ -113,6 +123,7 @@ class OvaWriter:
             self._f.write(b"\x00" * pad)
 
     def close(self) -> None:
+        # TAR EOF: two consecutive 512-byte zero blocks required by the ustar spec
         self._f.write(b"\x00" * 10240)
         self._f.flush()
         os.fsync(self._f.fileno())
@@ -125,7 +136,8 @@ class OvaWriter:
 # ── VMDK streamOptimized ──────────────────────────────────────────────────────
 
 def _vmdk_header(capacity_sectors: int, gd_offset: int, rgd_offset: int = 0) -> bytes:
-    flags = (1 << 0) | (1 << 16) | (1 << 17)  # newlines | compressed | markers
+    # bit0=newline-detection, bit16=compressed-grains, bit17=markers
+    flags = (1 << 0) | (1 << 16) | (1 << 17)
     buf = bytearray(512)
     struct.pack_into("<I", buf,  0, VMDK_MAGIC)
     struct.pack_into("<I", buf,  4, VMDK_VER)
@@ -180,6 +192,7 @@ def _compress_batch(raw: bytes, level: int) -> list[bytes | None]:
         grain = raw[offset:offset + GRAIN_SIZE]
         if not grain:
             break
+        # None = all-zero grain; caller skips it (sparse: not written to VMDK)
         results.append(None if not any(grain) else zlib.compress(grain, level=level))
         offset += GRAIN_SIZE
     return results
@@ -234,6 +247,7 @@ class VmdkWriter:
             f.write(data)
             cur_sector += len(data) // 512
 
+        # gd_offset placeholder: streamOptimized readers use the footer, not the primary header
         write_sectors(_vmdk_header(capacity_sectors, gd_offset=0xFFFFFFFFFFFFFFFF))
         write_sectors(_vmdk_descriptor(name, capacity_sectors))
 
@@ -267,6 +281,7 @@ class VmdkWriter:
                                             self._level)))
             next_submit += BATCH_GRAINS
 
+        # Prefill queue with 2× workers batches so threads stay busy while results are consumed
         for _ in range(self._workers * 2):
             submit_next()
 
@@ -372,6 +387,7 @@ def _ovf(name: str, vcpus: int, memory: int, bios: str, disks: list[dict], netwo
         f' ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized"/>'
         for i, d in enumerate(disks)
     )
+    # InstanceID 20+ avoids collision with controller (4) and NIC IDs (5+i)
     disk_items = "\n".join(
         f"      <Item>\n"
         f"        <rasd:AddressOnParent>{i}</rasd:AddressOnParent>\n"
