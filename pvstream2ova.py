@@ -201,7 +201,7 @@ class _HashingFile:
 
 
 class VmdkWriter:
-    def __init__(self, src: str, dst: Path, workers: int, level: int = 1,
+    def __init__(self, src: str, dst: Path, workers: int, level: int = 6,
                  on_progress: Callable[[int, int], None] | None = None) -> None:
         self._src      = src
         self._dst      = dst
@@ -539,8 +539,8 @@ def main() -> None:
                     help="OVA base name (default: VM name)")
     ap.add_argument("--workers", type=int, default=min(32, os.cpu_count() or 4), metavar="N",
                     help="Parallel compression threads")
-    ap.add_argument("--level",   type=int, default=1, choices=range(1, 10), metavar="1-9",
-                    help="zlib compression level (1=fast/large … 9=slow/small)")
+    ap.add_argument("--level",   type=int, default=6, choices=range(1, 10), metavar="1-9",
+                    help="zlib compression level (1=fast/large … 9=slow/small, default=6)")
     ap.add_argument("--log",     type=Path, default=None, metavar="FILE",
                     help="Append detailed log to FILE")
     ap.add_argument("--verify",  action="store_true",

@@ -4,8 +4,8 @@ Export Proxmox VM to OVA with streaming hole-punch and parallel VMDK compression
 
 ## Caratteristiche
 
-- VMDK streamOptimized nativo in Python: 32 thread paralleli, ~550 MiB/s
-- Hole-punch streaming: picco di disco = dimensione OVA (non del disco raw)
+- **zlib parallelo**: ogni grain VMDK (64 KiB) viene compresso in un thread separato via `ThreadPoolExecutor` — default `min(32, cpu_count)` thread, ~476 MiB/s su disco da 100 GB
+- **Hole-punch streaming**: il VMDK viene bucherellato (`fallocate FALLOC_FL_PUNCH_HOLE`) man mano che viene riversato nell'OVA — il picco di spazio disco occupato è uguale alla dimensione dell'OVA finale, mai di più
 - OVF 1.0 + SHA256 manifest (.mf) per compatibilità VMware/VirtualBox/QNAP
 - Warning automatici: VirtIO SCSI, efidisk0 skip, BIOS OVMF
 - Network bridge Proxmox nella Description OVF
@@ -13,11 +13,20 @@ Export Proxmox VM to OVA with streaming hole-punch and parallel VMDK compression
 
 ## Velocità vs alternative
 
-| Tool | Tempo (8 GB) | Note |
-|------|-------------|------|
-| pvstream2ova | ~12s | 32 thread paralleli |
-| qemu-img convert | ~24 min | max 4 thread |
-| vzdump | ~4 min | compressione migliore ma non portabile |
+Benchmark reale su VM con disco 100 GB (52 GB usati), NVMe PCIe 4, lettura e scrittura sullo stesso device.
+
+| Tool | VMDK | OVA packing | Totale | Dimensione | Portabile |
+|------|------|-------------|--------|-----------|----------|
+| pvstream2ova `--level 6` *(default)* | 3:51 | 1:39 | **5:40** | 27,968 MiB | Sì (OVA) |
+| pvstream2ova `--level 1` | 3:35 | 1:30 | 5:05 | 29,128 MiB | Sì (OVA) |
+| pvstream2ova `--level 9` | 4:21 | 1:39 | 6:10 | 27,895 MiB | Sì (OVA) |
+| qemu-img convert | 23:36 | — | 23:36 | 27,988 MiB | Sì (VMDK) |
+| vzdump (zstd) | — | — | **2:31** | 25,214 MiB | No (solo Proxmox) |
+
+Note:
+- `qemu-img`: quasi single-thread (CPU user ≈ real time), nessun OVA packing
+- `vzdump`: più veloce e compatto ma produce `.vma.zst`, importabile solo su Proxmox
+- OVA packing = lettura VMDK + scrittura OVA + hole-punch sul VMDK, tutto sullo stesso NVMe → il packing su device separato sarebbe più veloce
 
 ## Prerequisiti VM prima dell'export
 
@@ -52,7 +61,7 @@ pvstream2ova --vmid <ID> --out /var/lib/vz/import/ --log /var/log/pvstream2ova-<
 --tmp     DIR     Directory VMDK temporanei (default: uguale a --out)
 --name    NAME    Nome base OVA (default: nome VM)
 --workers N       Thread di compressione (default: min(32, cpu_count))
---level   1-9     Livello compressione zlib (default: 1)
+--level   1-9     Livello compressione zlib (default: 6)
 --log     FILE    Log dettagliato su file
 --verify          Esegue qemu-img check su ogni VMDK
 ```
